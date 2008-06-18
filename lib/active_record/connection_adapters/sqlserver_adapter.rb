@@ -95,6 +95,7 @@ module ActiveRecord
       
       def type_cast_code(var_name)
         case type
+        when :real_text then nil
         when :datetime  then "#{self.class.name}.cast_to_datetime(#{var_name})"
         when :timestamp then "#{self.class.name}.cast_to_time(#{var_name})"
         when :time      then "#{self.class.name}.cast_to_time(#{var_name})"
