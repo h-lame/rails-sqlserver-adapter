@@ -34,6 +34,7 @@ module ActiveRecord
       username    = config[:username] ? config[:username].to_s : 'sa'
       password    = config[:password] ? config[:password].to_s : ''
       autocommit  = config.key?(:autocommit) ? config[:autocommit] : true
+      sql_server_version = config[:sql_server_version] ? config[:sql_server_version].to_s : nil
       if mode == "ODBC"
         raise ArgumentError, "Missing DSN. Argument ':dsn' must be set in order for this adapter to work." unless config.has_key?(:dsn)
         dsn       = config[:dsn]
@@ -46,7 +47,7 @@ module ActiveRecord
       end
       conn      = DBI.connect(driver_url, username, password)
       conn["AutoCommit"] = autocommit
-      ConnectionAdapters::SQLServerAdapter.new(conn, logger, [driver_url, username, password])
+      ConnectionAdapters::SQLServerAdapter.new(conn, logger, [driver_url, username, password], sql_server_version)
     end
   end # class Base
 
@@ -201,9 +202,9 @@ module ActiveRecord
     # [Linux strongmad 2.6.11-1.1369_FC4 #1 Thu Jun 2 22:55:56 EDT 2005 i686 i686 i386 GNU/Linux]
     class SQLServerAdapter < AbstractAdapter
     
-      def initialize(connection, logger, connection_options=nil)
+      def initialize(connection, logger, connection_options=nil, sql_server_version=nil)
         super(connection, logger)
-        @sql_server_version = (connection_options || {}).delete(:sql_server_version)
+        @sql_server_version = sql_server_version
         @connection_options = connection_options
       end
 

@@ -69,7 +69,7 @@ class SqlServerAdapterTest < ActiveRecord::TestCase
       @connection.active?
     end
   end
-
+  
   def assert_all_statements_used_are_closed(&block)
     existing_handles = []
     ObjectSpace.each_object(DBI::StatementHandle) {|handle| existing_handles << handle}
@@ -96,7 +96,7 @@ end
 
 class StringDefaultsTest < ActiveRecord::TestCase
   class StringDefaults < ActiveRecord::Base; end;
-  
+
   def test_sqlserver_default_strings_before_save
     default = StringDefaults.new
     assert_equal nil, default.string_with_null_default
@@ -105,7 +105,7 @@ class StringDefaultsTest < ActiveRecord::TestCase
     assert_equal 'NULL', default.string_with_pretend_null_three
     assert_equal '(NULL)', default.string_with_pretend_null_four
   end
-
+  
   def test_sqlserver_default_strings_after_save
     default = StringDefaults.create
     assert_equal nil, default.string_with_null_default
@@ -114,6 +114,119 @@ class StringDefaultsTest < ActiveRecord::TestCase
     assert_equal 'NULL', default.string_with_pretend_null_three
     assert_equal '(NULL)', default.string_with_pretend_null_four
   end
+  
+  
+end
 
+class SupportForSqlServerVersionInSqlServerAdapterTest < Test::Unit::TestCase
+  def setup
+    @config = ActiveRecord::Base.configurations['arunit'].dup
+    @conn = nil
+  end
+  
+  def teardown
+    @conn.disconnect! unless @conn.nil?
+  end
 
+  def test_should_have_nil_sql_server_version_if_not_specified_in_connection_config
+    @config.delete(:sql_server_version)
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert_nil @conn.instance_eval{@sql_server_version}
+  end
+
+  def test_should_have_same_sql_server_version_as_that_specified_in_connection_config
+    @config[:sql_server_version] = 'Spanky'
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert_equal 'Spanky', @conn.instance_eval{@sql_server_version}
+  end
+end
+
+class SupportForVarcharMaxInSqlServerAdapterTest < Test::Unit::TestCase
+  def setup
+    @config = ActiveRecord::Base.configurations['arunit'].dup
+    @conn = nil
+  end
+  
+  def teardown
+    @conn.disconnect! unless @conn.nil?
+  end
+  
+  def test_should_not_support_varchar_max_if_no_sql_server_version_set
+    @config.delete(:sql_server_version)
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert !@conn.supports_varchar_max?
+  end
+  
+  def test_should_not_support_varchar_max_if_sql_server_version_is_less_than_2005
+    @config[:sql_server_version] = 2000
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert !@conn.supports_varchar_max?
+  end
+
+  def test_should_not_support_varchar_max_if_sql_server_version_is_a_string_that_is_less_than_2005
+    @config[:sql_server_version] = '2000'
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert !@conn.supports_varchar_max?
+  end
+  
+  def test_should_not_support_varchar_max_if_sql_server_version_is_not_a_string_that_turns_into_a_number
+    @config[:sql_server_version] = 'dave'
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert !@conn.supports_varchar_max?
+  end
+
+  def test_should_support_varchar_max_if_sql_server_version_is_2005
+    @config[:sql_server_version] = 2005
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert @conn.supports_varchar_max?
+  end
+  
+  def test_should_not_support_varchar_max_if_sql_server_version_is_a_string_that_is_2005
+    @config[:sql_server_version] = '2005'
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert @conn.supports_varchar_max?
+  end
+
+  def test_should_support_varchar_max_if_sql_server_version_is_greater_than_2005
+    @config[:sql_server_version] = 2008
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert @conn.supports_varchar_max?
+  end
+  
+  def test_should_not_support_varchar_max_if_sql_server_version_is_a_string_that_is_greater_than_2005
+    @config[:sql_server_version] = '2008'
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+    assert @conn.supports_varchar_max?
+  end
+end
+
+class SupportForSimulatedTextDataTypeInSqlServerAdapterTest < Test::Unit::TestCase
+  def setup
+    @config = ActiveRecord::Base.configurations['arunit'].dup
+    @conn = ActiveRecord::Base.sqlserver_connection(@config)
+  end
+  
+  def teardown
+    @conn.disconnect! unless @conn.nil?
+  end
+  
+  def test_should_use_varchar_max_as_text_data_type_if_varchar_max_is_supported
+    # Look ma! Super fake stubbing!
+    def @conn.supports_varchar_max?
+      true
+    end
+    tdt = @conn.simulated_text_data_type_for_sql_server
+    assert_equal 'varchar', tdt[:name]
+    assert_equal 'max', tdt[:limit]
+  end
+
+  def test_should_use_varchar_8000_as_text_data_type_if_varchar_max_is_not_supported
+    # Look ma! Super fake stubbing!
+    def @conn.supports_varchar_max?
+      false
+    end
+    tdt = @conn.simulated_text_data_type_for_sql_server
+    assert_equal 'varchar', tdt[:name]
+    assert_equal 8000, tdt[:limit]
+  end
 end
