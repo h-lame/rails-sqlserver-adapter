@@ -75,6 +75,8 @@ module ActiveRecord
           when /image/i             then :binary
           when /bit/i               then :boolean
           when /uniqueidentifier/i  then :string
+          when /text/i              then :real_text
+          when /varchar(max|8000)/i then :text
           else super
         end
       end
@@ -82,10 +84,11 @@ module ActiveRecord
       def type_cast(value)
         return nil if value.nil?
         case type
-        when :datetime  then self.class.cast_to_datetime(value)
-        when :timestamp then self.class.cast_to_time(value)
-        when :time      then self.class.cast_to_time(value)
-        when :date      then self.class.cast_to_datetime(value)
+        when :real_text then value
+        when :datetime  then cast_to_datetime(value)
+        when :timestamp then cast_to_time(value)
+        when :time      then cast_to_time(value)
+        when :date      then cast_to_datetime(value)
         else super
         end
       end
@@ -183,6 +186,12 @@ module ActiveRecord
     #
     # * <tt>:dsn</tt>       -- Defaults to nothing.
     #
+    # Useful for text handling options:
+    # * <tt>:sql_server_version</tt> -- The version of sql server you are connecting to 
+    #                                   (7.0, 2000, 2005, 2008 etc...). >= 2005 will use
+    #                                   varchar(max) instead of text, < 2005 will use
+    #                                   varchar(8000) instead of text.
+    #
     # ADO code tested on Windows 2000 and higher systems,
     # running ruby 1.8.2 (2004-07-29) [i386-mswin32], and SQL Server 2000 SP3.
     #
@@ -193,6 +202,7 @@ module ActiveRecord
     
       def initialize(connection, logger, connection_options=nil)
         super(connection, logger)
+        @sql_server_version = (connection_options || {}).delete(:sql_server_version)
         @connection_options = connection_options
       end
 
@@ -200,7 +210,7 @@ module ActiveRecord
         {
           :primary_key => "int NOT NULL IDENTITY(1, 1) PRIMARY KEY",
           :string      => { :name => "varchar", :limit => 255  },
-          :text        => { :name => "text" },
+          :text        => simulated_text_data_type_for_sql_server,
           :integer     => { :name => "int" },
           :float       => { :name => "float", :limit => 8 },
           :decimal     => { :name => "decimal" },
@@ -208,8 +218,9 @@ module ActiveRecord
           :timestamp   => { :name => "datetime" },
           :time        => { :name => "datetime" },
           :date        => { :name => "datetime" },
-          :binary      => { :name => "image"},
-          :boolean     => { :name => "bit"}
+          :binary      => { :name => "image" },
+          :boolean     => { :name => "bit" },
+          :real_text   => { :name => 'text' },
         }
       end
 
@@ -217,13 +228,25 @@ module ActiveRecord
         'SQLServer'
       end
       
+      def simulated_text_data_type_for_sql_server
+        if supports_varchar_max?
+          {:name => 'varchar', :limit => 'max' }
+        else
+          {:name => 'varchar', :limit => 8000 }
+        end
+      end
+      
       def supports_migrations? #:nodoc:
         true
       end
 
+      def supports_varchar_max?
+        (@sql_server_version && @sql_server_version.to_i >= 2005)
+      end
+
       def type_to_sql(type, limit = nil, precision = nil, scale = nil) #:nodoc:
         return super unless type.to_s == 'integer'
-
+        
         if limit.nil? || limit == 4
           'integer'
         elsif limit < 4
@@ -660,5 +683,15 @@ module ActiveRecord
         end
 
     end #class SQLServerAdapter < AbstractAdapter
+    
+    class TableDefinitions
+      def real_text(*args)
+        options = args.extract_options!
+        column_names = args
+
+        column_names.each { |name| column(name, 'real_text', options) }
+      end
+    end
+    
   end #module ConnectionAdapters
 end #module ActiveRecord
